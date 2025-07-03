@@ -5,8 +5,9 @@
 2. [安装QEMU](#安装qemu)
 3. [下载RISC-V系统镜像](#下载risc-v系统镜像)
 4. [运行RISC-V虚拟机](#运行risc-v虚拟机)
-5. [在虚拟机中编译和运行程序](#在虚拟机中编译和运行程序)
-6. [常见问题解决](#常见问题解决)
+5. [网络配置](#网络配置)
+6. [在虚拟机中编译和运行程序](#在虚拟机中编译和运行程序)
+7. [常见问题解决](#常见问题解决)
 
 最近马老师让我去测试一下前段时间我release的riscv的buck2是否有用，
 遇到了配置环境的问题，容易忘记，下面记录一下。
@@ -331,12 +332,76 @@ chmod 600 dqib_riscv64-virt/ssh_user_rsa_key
 ssh -i dqib_riscv64-virt/ssh_user_rsa_key -p 2222 debian@localhost
 ```
 
+#### 虚拟机网络架构
+在WSL2环境中，虚拟机的网络架构如下：
+
+```
+Windows Host (代理: 127.0.0.1:7890)
+    ↓
+WSL2 (IP: 172.x.x.x, 代理转发)
+    ↓ (端口转发 2222)
+RISC-V VM (IP: 10.0.2.15, 网关: 10.0.2.2)
+```
+
+#### 网络共享方案
+
+
+##### 使用proxychains（推荐）
+在虚拟机中安装和配置proxychains：
+
+```bash
+# 在虚拟机中安装proxychains
+sudo apt update
+sudo apt install -y proxychains
+
+# 配置proxychains
+sudo cp /etc/proxychains.conf /etc/proxychains.conf.backup
+
+# 编辑配置文件
+```
+# 使用QEMU默认网关作为代理
+socks5 10.0.2.2 7890
+
+# 测试网络连接
+proxychains curl -I https://www.google.com
+proxychains curl -I https://github.com
+```
+
+##### 设置环境变量代理配置（可选）
+
+```bash
+# 在虚拟机中设置代理环境变量
+export http_proxy=http://10.0.2.2:7891
+export https_proxy=http://10.0.2.2:7891
+export HTTP_PROXY=http://10.0.2.2:7891
+export HTTPS_PROXY=http://10.0.2.2:7891
+
+# 测试代理连接
+curl -I https://www.google.com
+curl -I https://github.com
+
+# 永久设置（添加到~/.bashrc）
+echo 'export http_proxy=http://10.0.2.2:7891' >> ~/.bashrc
+echo 'export https_proxy=http://10.0.2.2:7891' >> ~/.bashrc
+echo 'export HTTP_PROXY=http://10.0.2.2:7891' >> ~/.bashrc
+echo 'export HTTPS_PROXY=http://10.0.2.2:7891' >> ~/.bashrc
+source ~/.bashrc
+```
+
+##### Git代理配置
+```bash
+# 配置Git使用代理
+git config --global http.proxy http://10.0.2.2:7891
+git config --global https.proxy http://10.0.2.2:7891
+```
+
+
 ### 在Windows主机用VSCode连接WSL2中的Debian RISC-V虚拟机
 
-#### 重要限制说明
+##### 重要限制说明
 **VSCode不支持RISC-V架构的远程开发**。VSCode的Remote-SSH插件需要目标系统支持x86_64或ARM64架构，而RISC-V架构目前不被支持。
 
-#### 替代方案：使用rsync同步开发
+##### 替代方案：使用rsync同步开发
 在WSL2中设置自动文件同步：
 
 ```bash
@@ -366,10 +431,10 @@ EOF
 chmod +x auto-sync.sh
 ```
 
-运行`./auto-sync.sh`就可以实时讲wsl的`./src`文件夹的内容同步到debian虚拟机的`~/project/`文件夹。
-只需要在wsl的src文件夹开发就可以了
+运行`./auto-sync.sh`就可以实时将WSL的`./src`文件夹的内容同步到debian虚拟机的`~/project/`文件夹。
+只需要在WSL的src文件夹开发就可以了。
 
-#### 性能监控
+##### 性能监控
 ```bash
 # 在虚拟机中监控系统资源
 ssh -i dqib_riscv64-virt/ssh_user_rsa_key -p 2222 debian@localhost "htop"
@@ -378,7 +443,7 @@ ssh -i dqib_riscv64-virt/ssh_user_rsa_key -p 2222 debian@localhost "htop"
 ssh -i dqib_riscv64-virt/ssh_user_rsa_key -p 2222 debian@localhost "time ./my_program"
 ```
 
-#### 注意事项
+##### 注意事项
 - RISC-V架构的限制是暂时的，随着RISC-V生态的发展，未来可能会有更好的IDE支持
 - 建议使用WSL2作为主要开发环境，虚拟机主要用于测试和验证
 - 定期备份重要的代码和配置文件
@@ -860,7 +925,6 @@ ssh -i dqib_riscv64-virt/ssh_user_rsa_key -p 2222 root@localhost "usermod -aG su
 # 检查当前系统时间
 date
 
-
 # 强制设置正确时间
 date -s "2024-01-15 12:00:00"
 
@@ -900,7 +964,6 @@ EOF
 apt update
 ```
 
-
 ## 方案对比
 
 | 特性 | Ubuntu RISC-V | Debian RISC-V |
@@ -912,13 +975,3 @@ apt update
 | **适合用户** | 新手、快速测试 | 高级用户、学习 |
 | **维护** | 简单 | 简单 |
 | **镜像来源** | Ubuntu官方 | Debian社区维护 |
-
-## 总结
-
-通过本指南，我们在WSL2环境中：
-
-1. 安装QEMU模拟器
-2. 了解Ubuntu和Debian两种RISC-V镜像方案
-3. 配置并启动RISC-V虚拟机
-4. 在虚拟机中编译和运行程序
-5. 了解性能优化和故障排除方法
